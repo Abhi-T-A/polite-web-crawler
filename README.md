@@ -1,141 +1,92 @@
-# Polite Scraper 🕷️⚡
+# Polite Web Scraper 🕷️
 
-A modular, production-grade Python web crawler designed with **polite crawling standards**, asynchronous networking, structured data extraction, multi-backend persistence, REST API service, unit testing, containerization, and performance benchmarking.
+A pythonic web crawler built to scrape e-commerce data from [books.toscrape.com](https://books.toscrape.com).
 
----
-
-## 🌟 Features
-
-- 🤖 **Polite Crawling Engine**: Respects `robots.txt` directives via `urllib.robotparser` and enforces configurable request throttling.
-- ⚡ **Asynchronous Concurrency**: High-performance `httpx.AsyncClient` with `asyncio.Semaphore` concurrent fetching engine.
-- 🔗 **Canonical URL Manager**: Handles URL normalization (casing, parameter sorting, fragment removal) and in-memory visited URL deduplication.
-- 📊 **Crawl Statistics & Metrics**: Real-time metrics collection tracking duration, throughput, success rate, and average response latency.
-- 💾 **Abstracted Storage Backends**: Clean `Storage` base contract supporting **SQLite**, **PostgreSQL** (SQLAlchemy ORM + Alembic migrations), **JSON**, and **CSV** exports.
-- 🌐 **Modular FastAPI REST API**: Production REST service exposing `/api/v1/books`, `/api/v1/books/search`, `/api/v1/books/{id}`, and `/api/v1/stats` with interactive OpenAPI Swagger docs (`/docs`).
-- 📈 **Performance Benchmarking**: Integrated benchmarking suite comparing Sequential vs. Asynchronous crawl metrics.
-- 🖥️ **CLI Command Interface**: Full command-line flexibility powered by `argparse` (`--limit`, `--delay`, `--json`, `--csv`, `--sqlite`, `--verbose`).
-- 🔄 **Rotating Logging System**: Dual rotating file logs (`logs/scraper.log` and `logs/error.log`).
-- 🧪 **Comprehensive Pytest Suite**: 100% test pass rate across 21 test cases covering API endpoints, async fetcher, database models, parsers, and stats collectors.
-- 🐳 **Docker & Compose Ready**: Multi-stage lightweight `Dockerfile` and volume-mounted `docker-compose.yml`.
+This repository implements a **polite scraping pipeline** that respects site rules (`robots.txt`), throttles requests using rate limiting, cleans extracted fields, validates data schemas, and persists structured records.
 
 ---
 
-## 🏗️ Architecture Overview
-
-```mermaid
-flowchart TD
-    A[CLI / REST API Client] -->|argparse / FastAPI| B[Crawler Orchestrator]
-    B --> C[RobotsChecker & URLManager]
-    C -->|Normalizes & Deduplicates| D[AsyncFetcher / Fetcher]
-    D -->|Polite Concurrency / Delay| E[HTMLParser & Extractor]
-    E -->|BookRecords| F[Storage Interface]
-    F --> G[(SQLite Database)]
-    F --> H[(PostgreSQL Database)]
-    F --> I[JSON Exporter]
-    F --> J[CSV Exporter]
-    B --> K[CrawlStats & Benchmark]
-```
-
----
-
-## 🚀 REST API Endpoints
-
-Launch the FastAPI application:
-
-```bash
-uvicorn app.api.main:app --reload
-```
-
-Interactive Swagger documentation is available at `http://127.0.0.1:8000/docs`:
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/` | Service health check |
-| `GET` | `/api/v1/books` | List books with pagination, price/rating filters, and sorting |
-| `GET` | `/api/v1/books/search` | Search books by title keyword (`?q=python`) |
-| `GET` | `/api/v1/books/{id}` | Retrieve single book detail by ID |
-| `GET` | `/api/v1/stats` | Dataset metrics summary (total books, avg price, rating breakdown) |
-
----
-
-## ⚡ Performance Benchmarking Report
-
-Run the benchmark suite:
-
-```bash
-python -m app.utils.benchmark
-```
-
-### Benchmark Results Comparison
+## 🔄 Scraping Pipeline
 
 ```text
-=======================================================
-       Performance Benchmark Comparison Report
-=======================================================
-Metric                    | Sequential   | Async       
--------------------------------------------------------
-Total Duration (sec)      | 14.8         | 3.2         
-Requests / Sec            | 0.34         | 1.56        
-Pages / Sec               | 0.34         | 1.56        
-Avg Response Time (s)     | 1.42         | 0.64        
-Success Rate (%)          | 100.0        | 100.0       
-Failed Requests           | 0            | 0           
-=======================================================
+Fetch (HTTPX)
+  ↓
+Parse (BeautifulSoup + lxml)
+  ↓
+Extract (DOM selector parsing)
+  ↓
+Clean (Currency & rating normalization)
+  ↓
+Structure (Pydantic BookRecord schemas)
+  ↓
+Save (SQLite database & JSON export)
 ```
 
 ---
 
-## 🧪 Testing & CI/CD Pipeline
+## ✨ Key Features
 
-Execute the full pytest test suite:
-
-```bash
-pytest tests/
-```
-
-GitHub Actions automated workflow (.github/workflows/ci.yml) executes linting (`ruff`), style checking (`black`), and testing (`pytest`) on every commit.
+- **Politeness First**: Checks `robots.txt` before fetching and enforces configurable delays (`REQUEST_DELAY=2s`).
+- **Data Validation**: Uses Pydantic (`BookRecord`) to guarantee type-safe titles, prices, ratings, and URLs.
+- **Deduplication**: `URLManager` tracks visited links and canonical URLs to prevent infinite crawl loops.
+- **Dual Persistence**: Stores records in **SQLite** (`scraper.db` with `UNIQUE` constraint) and exports to **JSON** (`data.json`).
+- **Structured Logging**: Log messages saved to `logs/scraper.log`.
 
 ---
 
-## 📁 Directory Layout
+## 📁 Project Layout
 
 ```text
 polite_scraper/
-├── alembic/               # Alembic database migrations
 ├── app/
-│   ├── api/               # Modular FastAPI Application
-│   │   ├── main.py        # FastAPI initialization
-│   │   ├── routers/       # API endpoint route handlers
-│   │   ├── schemas/       # Request/Response Pydantic schemas
-│   │   └── services/      # Data access querying service
-│   ├── main.py            # Crawler execution loop
-│   ├── config.py          # Environment settings loader
 │   ├── crawler/
-│   │   ├── async_fetcher.py # Async HTTPX client engine
-│   │   ├── fetcher.py     # Synchronous HTTPX client
-│   │   ├── limiter.py     # Rate limiting delay handler
+│   │   ├── fetcher.py     # HTTP Client with retries
+│   │   ├── limiter.py     # Rate limiting delay
 │   │   ├── robots.py      # Robots.txt validator
-│   │   ├── scheduler.py   # Pagination link parser
-│   │   └── url_manager.py # Canonical URL normalization
+│   │   ├── scheduler.py   # Next-page pagination
+│   │   └── url_manager.py # URL normalization & visited tracking
 │   ├── models/
-│   │   └── record.py      # Pydantic BookRecord model
+│   │   └── record.py      # Pydantic data schema
 │   ├── parser/
-│   │   ├── html_parser.py # BeautifulSoup parse wrapper
-│   │   ├── extractor.py   # DOM element extraction
-│   │   └── cleaner.py     # String & currency cleaner
+│   │   ├── html_parser.py # BeautifulSoup HTML parser
+│   │   ├── extractor.py   # DOM extraction
+│   │   └── cleaner.py     # Price & rating cleaner
 │   ├── storage/
-│   │   ├── base.py        # Abstract Storage contract
-│   │   ├── sqlite_storage.py # SQLite storage backend
-│   │   ├── postgres_storage.py # PostgreSQL SQLAlchemy ORM
-│   │   ├── json_storage.py   # JSON exporter
-│   │   └── csv_storage.py    # CSV exporter
-│   └── utils/
-│       ├── benchmark.py   # Performance benchmark utility
-│       ├── logger.py      # Rotating file log setup
-│       └── stats.py       # Metrics collector & report generator
-├── tests/                 # 21 Pytest unit & integration test cases
-├── Dockerfile             # Container build definition
-├── docker-compose.yml     # Docker compose service orchestrator
-├── run.py                 # CLI execution entrypoint
+│   │   ├── sqlite_storage.py # SQLite database export
+│   │   └── json_storage.py   # JSON file export
+│   ├── utils/
+│   │   ├── logger.py      # Logging setup
+│   │   └── stats.py       # Metrics collector
+│   └── main.py            # Main pipeline execution loop
+├── logs/                  # Application logs
+├── app/output/            # Output data files (scraper.db, data.json)
+├── run.py                 # Application entrypoint
+├── requirements.txt       # Project dependencies
+├── .env.example           # Environment variables template
 └── README.md              # Documentation
 ```
+
+---
+
+## 🚀 How to Run
+
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Configure Environment**:
+   Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Execute Crawler**:
+   ```bash
+   python run.py
+   ```
+
+4. **Run Unit Tests**:
+   ```bash
+   pytest tests/
+   ```

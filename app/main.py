@@ -1,6 +1,4 @@
 import time
-import logging
-from typing import List, Optional
 
 from app.config import settings
 from app.crawler.fetcher import Fetcher
@@ -12,65 +10,44 @@ from app.crawler.url_manager import URLManager
 from app.parser.html_parser import HTMLParser
 from app.parser.extractor import Extractor
 
-from app.storage.base import Storage
-from app.storage.json_storage import JSONStorage
 from app.storage.sqlite_storage import SQLiteStorage
-from app.storage.csv_storage import CSVStorage
+from app.storage.json_storage import JSONStorage
 
 from app.utils.logger import logger
 from app.utils.stats import CrawlStats
 
 
-def run_crawler(
-    limit: Optional[int] = None,
-    delay: Optional[float] = None,
-    use_sqlite: bool = True,
-    use_json: bool = True,
-    use_csv: bool = False,
-    verbose: bool = False,
-) -> CrawlStats:
+def main():
     """
-    Main execution entry point for the Polite Web Crawler.
+    Workshop Scraping Pipeline:
+    Fetch -> Parse -> Extract -> Clean -> Structure -> Save
     """
-    if verbose:
-        logger.setLevel(logging.DEBUG)
-
-    request_delay = delay if delay is not None else settings.REQUEST_DELAY
-
-    # Initialize Crawler Components
     fetcher = Fetcher()
     url_manager = URLManager()
     stats = CrawlStats()
+    sqlite_storage = SQLiteStorage()
+    json_storage = JSONStorage()
+
     robots = RobotsChecker(settings.USER_AGENT)
     robots.load(settings.BASE_URL)
 
-    # Configure Active Storage Backends
-    storage_backends: List[Storage] = []
-    if use_sqlite:
-        storage_backends.append(SQLiteStorage())
-    if use_json:
-        storage_backends.append(JSONStorage())
-    if use_csv:
-        storage_backends.append(CSVStorage())
-
-    all_books = []
     current_url = settings.BASE_URL
+    all_books = []
     page_number = 1
 
     stats.start()
-    logger.info("Starting Polite Web Crawler session...")
+    logger.info("Starting Polite Web Crawler...")
 
     try:
         while current_url:
-            if limit and page_number > limit:
-                logger.info(f"Reached page limit limit={limit}. Stopping crawler.")
-                break
-
             canonical_url = url_manager.normalize_url(current_url)
+
+            # Check if URL was already visited
             if url_manager.is_visited(canonical_url):
                 logger.warning(f"URL already visited: {canonical_url}. Skipping.")
                 break
 
+            # Verify robots.txt compliance
             if not robots.can_fetch(current_url):
                 logger.warning(f"Blocked by robots.txt: {current_url}. Stopping crawler.")
                 stats.record_failure()
@@ -81,7 +58,7 @@ def run_crawler(
 
             url_manager.add_visited(current_url)
 
-            # Fetch page and measure duration
+            # 1. FETCH
             t0 = time.time()
             html = fetcher.fetch(current_url)
             fetch_duration = time.time() - t0
@@ -91,45 +68,38 @@ def run_crawler(
                 stats.record_failure()
                 break
 
-            # Rate Limiter
-            logger.info(f"Sleeping for {request_delay} seconds...")
-            time.sleep(request_delay)
+            # Polite Rate Limiting Delay
+            RateLimiter.wait()
 
-            # Parse HTML
+            # 2. PARSE HTML
             soup = HTMLParser.parse(html)
+
+            # 3. EXTRACT & CLEAN DATA into Pydantic BookRecord models
             books = Extractor.extract_books(soup)
 
             stats.record_page(len(books), response_time=fetch_duration)
-            logger.info(f"Extracted {len(books)} books on page {page_number}")
+            logger.info(f"Extracted {len(books)} structured records on Page {page_number}")
 
             all_books.extend(books)
 
-            # Save page results to active storage backends
-            for backend in storage_backends:
-                backend.save(books)
+            # 4. SAVE TO SQLITE (Database Storage)
+            sqlite_storage.save(books)
 
             # Discover next page link
             current_url = Scheduler.get_next_page(soup, current_url)
             page_number += 1
 
+        # 5. SAVE TO JSON (File Export)
+        json_storage.save(all_books)
+
     finally:
         stats.stop()
-        
-        # Save complete dataset to file-based exporters if active
-        for backend in storage_backends:
-            if isinstance(backend, (JSONStorage, CSVStorage)):
-                backend.save(all_books)
-            backend.close()
-
+        sqlite_storage.close()
+        json_storage.close()
         fetcher.close()
+
         stats.print_report()
-
-    return stats
-
-
-def main():
-    """Fallback entry point calling run_crawler with default parameters."""
-    run_crawler()
+        logger.info("Crawler finished successfully.")
 
 
 if __name__ == "__main__":
